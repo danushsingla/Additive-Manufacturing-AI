@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
@@ -158,9 +157,6 @@ def extract_features(probe_layer):
                     'slices/segmentation_results/3',  # 4 5
                     'slices/segmentation_results/5',  # 6 7
                     'slices/segmentation_results/8',  # 8 9
-                    # -------------------------------
-                    'slices/segmentation_results/4',  # 12 13
-                    'slices/segmentation_results/9',  # 14 15
                 ]
 
                 # 'slices/segmentation_results/2',  # 10 11
@@ -174,6 +170,9 @@ def extract_features(probe_layer):
                 #     'temporal/build_plate_temperature', # 20
                 #     'temporal/bottom_flow_temperature', # 21
                 #     'temporal/actual_ventilator_flow_rate', # 22
+                # -------------------------------
+                # 'slices/segmentation_results/4',  # 12 13
+                # 'slices/segmentation_results/9',  # 14 15
 
                 # Adjust probe layer for the second file because it has less layers
                 if path_file == r'D:\2021-04-28 TCR Phase 1 Build 3.hdf5':
@@ -235,27 +234,41 @@ if __name__ == '__main__':
     all_features = []
     all_ground_truth = []
 
-    increment_counter = 0
+    # increment_counter = 0
 
-    for probe_layer in probe_layers:
-        if probe_layer+increment_counter < 3000:
-            probe_layer += increment_counter
-        else:
-            probe_layer += 3000
-        increment_counter += 500
-        print(f'Extracting features for probe layer {probe_layer}')
-        features, ground_truths = extract_features(probe_layer)
+    # for probe_layer in probe_layers:
+    #     if probe_layer+increment_counter < 3000:
+    #         probe_layer += increment_counter
+    #     else:
+    #         probe_layer += 3000
+    #     increment_counter += 500
+    #     print(f'Extracting features for probe layer {probe_layer}')
+    #     features, ground_truths = extract_features(probe_layer)
+    #     if features and ground_truths:
+    #         all_features.extend(features)
+    #         # Need to add the targets as many times as there are features
+    #         all_ground_truth.extend(ground_truths)
+    #     if probe_layer % 100 == 0:
+    #         print(f'Finished extracting features for probe layer {probe_layer}')
+    #     if len(all_features) != len(all_ground_truth):
+    #         print('Length of features and ground truth do not match')
+    #         print(f'Length of features: {len(all_features)}')
+    #         print(f'Length of ground truth: {len(all_ground_truth)}')
+    #         print(f'Probe layer: {probe_layer}')
+
+    # probe_layers = range(15)
+    probe_layers = range(3000, 3200, 25)
+    with Pool(processes=8) as pool:
+        results = pool.map(extract_features, probe_layers)
+
+    all_features = []
+    all_ground_truth = []
+
+    for result in results:
+        features, ground_truths = result
         if features and ground_truths:
             all_features.extend(features)
-            # Need to add the targets as many times as there are features
             all_ground_truth.extend(ground_truths)
-        if probe_layer % 100 == 0:
-            print(f'Finished extracting features for probe layer {probe_layer}')
-        if len(all_features) != len(all_ground_truth):
-            print('Length of features and ground truth do not match')
-            print(f'Length of features: {len(all_features)}')
-            print(f'Length of ground truth: {len(all_ground_truth)}')
-            print(f'Probe layer: {probe_layer}')
 
     print('Finished extracting features')
 
@@ -301,7 +314,7 @@ if __name__ == '__main__':
         val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
 
         # Create the model
-        model = VPPM(n_features=14).cuda()
+        model = VPPM(n_features=10).cuda()
 
         # Load model
         # model.load_state_dict(torch.load('models/model_weights.pth')['model_state_dict'])
@@ -309,8 +322,8 @@ if __name__ == '__main__':
 
         # Create cross entropy loss and optimizer functions
         criterion = nn.MSELoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-6, weight_decay=1e-3)
-        scheduler = ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
+        scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5)
 
         for epoch in range(400):                
             train_loss = 0
@@ -331,16 +344,16 @@ if __name__ == '__main__':
                 l1_penalty = l1_regularization(model, lambda_l1)
                 loss += l1_penalty
 
-                # Backward pass
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
                 # Find RMSE
                 if(loss < 0):
                     print(f"Loss: {loss}")
                 else:
                     loss = torch.sqrt(loss)
+
+                # Backward pass
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
                 train_loss += loss.item()
 
